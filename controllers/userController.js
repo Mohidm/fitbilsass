@@ -1,0 +1,698 @@
+const functions = require('../helpers/functions');
+const { validationResult } = require('express-validator');
+const Password = require('node-php-password')
+const config = require('../server/config');
+const jwt = require('jsonwebtoken');
+// var twilio = require('twilio');
+// const twilio_client = twilio(config.twilio_account_sid, config.twilio_auth_token);
+// const Cryptr = require('cryptr');
+// const cryptr = new Cryptr(config.encryption_key);
+// const fs = require('fs');
+// var CryptoJS = require("crypto-js");
+
+var moment = require('moment');
+const path = require('path');
+var AWS = require('aws-sdk');
+const ID = config.s3_id;
+const SECRET = config.s3_secret_access_key;
+const BUCKET_NAME = config.s3_default_bucket;
+const s3 = new AWS.S3({
+  accessKeyId: ID,
+  secretAccessKey: SECRET
+});
+const userModel = require('../models/userModel');
+
+const common_functions = require('../helpers/common_functions');
+
+const { request } = require('express');
+const { ride_request_payment } = require('../helpers/validator');
+
+let handler = {
+  async registration(req, res, next) {
+    try {
+      // Initialize response object if not already
+      req.response = req.response || {};
+
+      // Validation check
+      validationResult(req).throw();  // Throws error if validation fails
+
+      // Check if the email or phone number already exists
+      const existing_data = await functions.get("users", {
+        email: req.body.email,
+      });
+      const phone_existing = await functions.get("users", {
+        phone: req.body.phone,
+      });
+
+      // Check for existing email
+      if (existing_data.length > 0) {
+        if (existing_data[0].is_deleted === "Y") {
+          throw { errors: [{ msg: "Account deleted, please contact admin" }] };
+        } else if (existing_data[0].is_blocked === "Y") {
+          throw { errors: [{ msg: "Account blocked, please contact admin" }] };
+        } else {
+          throw { errors: [{ msg: "Email already exists" }] };
+        }
+      }
+
+      // Check for existing phone number
+      if (phone_existing.length > 0) {
+        if (phone_existing[0].is_deleted === "Y") {
+          throw { errors: [{ msg: "Account deleted, please contact admin" }] };
+        } else if (phone_existing[0].is_blocked === "Y") {
+          throw { errors: [{ msg: "Account blocked, please contact admin" }] };
+        } else {
+          throw { errors: [{ msg: "Phone number already exists" }] };
+        }
+      }
+
+      // Password hashing and OTP generation
+      const enc_pass = Password.hash(req.body.password, "PASSWORD_DEFAULT");
+      const otp = Math.floor(1000 + Math.random() * 9000);  // 4-digit OTP
+
+      // Prepare registration data
+      const register_data = {
+        email: req.body.email,
+        first_name: req.body.first_name,
+        last_name: req.body.last_name,
+        phone: req.body.phone,
+        password: enc_pass,
+        otp: otp,
+        device_token: req.body.device_token || "",
+        created_at: moment().format("YYYY-MM-DD HH:mm:ss"),
+        updated_at: moment().format("YYYY-MM-DD HH:mm:ss")
+      };
+
+      // Insert data into the database
+      await functions.insert("users", register_data).then((result) => {
+        // Set up the response and JWT tokens
+        req.response = {
+          otp_type: "registration",
+          status: true,
+          prev_middleware: "user_registration",
+          reg_insert_result: {
+            reg_db: true,
+            otp: otp,
+            insertId: result.insertId,
+            message: "Registration successful",
+          },
+        };
+
+        // Set the access and refresh tokens in the headers
+        res.setHeader(
+          "x-access-token",
+          jwt.sign({ email: req.body.email, user_id: result.insertId }, config.jwt_secret, {
+            expiresIn: "24h",
+          })
+        );
+        res.setHeader(
+          "refresh-token",
+          jwt.sign({ email: req.body.email, user_id: result.insertId }, config.jwt_secret, {
+            expiresIn: "240000h",
+          })
+        );
+
+        // Proceed to the next middleware
+        next();
+      });
+    } catch (error) {
+      console.log("🚀 ~ registration ~ error:", error)
+      // Handle validation or registration errors
+      const errMsg = error.errors && error.errors[0] ? error.errors[0].msg : "Something went wrong";
+      req.response = req.response || {};
+      req.response.status = false;
+      req.response.message = errMsg;
+      return res.status(400).json({
+        status: false,
+        message: errMsg,
+      });
+      // Pass the error to the next middleware or handler
+      //  next();
+    }
+  },
+  async update_profile_image(req, next) {
+    let user_data = await functions.get("user_master", {
+      user_id: req.decoded.user_id,
+    });
+
+    if (req.body.profile_image) {
+      if (req.body.profile_image != "") {
+        if (user_data.length > 0) {
+          user_data = user_data[0];
+          req.response.user_data = user_data; // saving data so that we can use it in next middleware.
+          console.log(user_data);
+          if (
+            user_data.profile_image != "" &&
+            user_data.profile_image != null
+          ) {
+            let image_key = user_data.profile_image
+              ? path.basename(user_data.profile_image)
+              : "";
+            await s3.deleteObject(
+              { Bucket: BUCKET_NAME, Key: `${config.cpi_folder}/${image_key}` },
+              function (err) {
+                if (!err) {
+                  req.response.profile_image_delete = true;
+                }
+              }
+            );
+          }
+          let m = req.body.profile_image.match(
+            /^data:([A-Za-z-+\/]+);base64,(.+)$/
+          );
+          let b = Buffer.from(m[2], "base64");
+
+          var image_name =
+            req.decoded.user_id +
+            "_customer_prof_pic_" +
+            moment().unix() +
+            ".jpeg";
+          profile_image = image_name;
+          var params = {
+            Bucket: BUCKET_NAME + `/${config.cpi_folder}`,
+            Key: profile_image,
+            ACL: "public-read",
+            Body: b,
+            ContentEncoding: "base64",
+            ContentType: "image/jpeg",
+          };
+          try {
+            const { Location, Key } = await s3.upload(params).promise();
+            location = Location;
+
+            key = Key;
+            req.response.profile_image = location;
+            req.response.profile_image_upload = true;
+            next();
+          } catch (error) {
+            console.log(error);
+            req.response.profile_image = "";
+            req.response.profile_image_upload = false;
+            next();
+          }
+        }
+      } else {
+        if (user_data.length > 0) {
+          user_data = user_data[0];
+          req.response.user_data = user_data;
+        }
+        req.response.profile_image_upload = false;
+        next();
+      }
+    } else {
+      if (user_data.length > 0) {
+        user_data = user_data[0];
+        req.response.user_data = user_data;
+      }
+      req.response.profile_image_upload = false;
+      next();
+    }
+  },
+  async login(req, res, next) {
+    try {
+      validationResult(req).throw();
+
+      await functions
+        .get("users", { email: req.body.email })
+        .then((result) => {
+          var user_data = result[0];
+
+          if (Password.verify(req.body.password, user_data.password)) {
+            // check if password is correct
+
+            if (user_data.is_blocked == "Y") {
+              throw {
+                errors: [{ msg: "Account blocked" }],
+              };
+            }
+            if (user_data.is_deleted == "Y") {
+              throw {
+                errors: [{ msg: "Account deleted" }],
+              };
+            }
+
+            if (user_data.verification_status == "N") {
+              // check if user verified
+              var otp = Math.floor(1000 + Math.random() * 9000); // step 2 otp generation
+              functions
+                .update("user_master", { otp: otp }, { email: req.body.email })
+                .then(() => {
+                  req.response.status = false;
+                  req.response.message = "Please verify your account";
+                  req.response.otp = otp;
+                  req.response.otp_type = "verification_fail";
+                  req.response.first_name = user_data.first_name;
+                  req.response.last_name = user_data.last_name;
+                  req.response.phone_prefix = user_data.phone_prefix;
+                  req.response.phone = user_data.phone;
+                  req.response.verification_status =
+                    user_data.verification_status;
+                  req.response.email = user_data.email;
+                  req.response.profile_image = user_data.profile_image;
+
+                  var newtoken = jwt.sign(
+                    { email: user_data.email, user_id: user_data.user_id },
+                    config.jwt_secret,
+                    {
+                      expiresIn: "24h",
+                    }
+                  );
+                  var newrefreshtoken = jwt.sign(
+                    { email: user_data.email, user_id: user_data.user_id },
+                    config.jwt_secret,
+                    {
+                      expiresIn: "24000000h",
+                    }
+                  );
+
+                  res.setHeader("x-access-token", newtoken);
+                  res.setHeader("refresh-token", newrefreshtoken);
+
+                  next();
+                });
+              return false;
+            }
+
+            req.response.status = true;
+            req.response.message = "Login Successfull";
+            req.response.user_details = {
+              user_id: user_data.user_id,
+              first_name: user_data.first_name,
+              last_name: user_data.last_name,
+              phone_prefix: user_data.phone_prefix,
+              phone: user_data.phone,
+              verification_status: user_data.verification_status,
+              email: user_data.email,
+              token_expiry: "24h",
+              profile_image: user_data.profile_image,
+            };
+            var newtoken = jwt.sign(
+              { email: result[0].email, user_id: user_data.user_id },
+              config.jwt_secret,
+              {
+                expiresIn: "24h",
+              }
+            );
+            var newrefreshtoken = jwt.sign(
+              { email: result[0].email, user_id: user_data.user_id },
+              config.jwt_secret,
+              {
+                expiresIn: "24000000h",
+              }
+            );
+
+            res.setHeader("x-access-token", newtoken);
+            res.setHeader("refresh-token", newrefreshtoken);
+            next();
+          } else {
+            req.response.status = false;
+            req.response.message = "Incorrect Password";
+            req.response.user_details = {};
+            next();
+          }
+        });
+    } catch (errors) {
+      console.log(errors);
+      var error = errors.errors[0];
+      req.response.status = false;
+      req.response.message = error.msg;
+      next();
+    }
+  },
+
+  async forgot_password(req, next) {
+    try {
+      validationResult(req).throw();
+
+      let emails = await common_functions.get_email_templates([
+        "forgot_password_email",
+      ]);
+      emails = emails[0];
+      emails.email_template = emails.template;
+
+      var subject = "Forgot-Password";
+      var otp = Math.floor(1000 + Math.random() * 9000);
+
+      let user_data = await functions.get("user_master", {
+        email: req.body.email,
+      });
+
+      functions
+        .update("user_master", { otp: otp }, { email: req.body.email })
+        .then(async () => {
+          emails.email_template = emails.email_template.replace(
+            /##NAME##/,
+            user_data[0].first_name + " " + user_data[0].last_name
+          );
+          emails.email_template = emails.email_template.replace(/##OTP##/, otp);
+          twilio_client.messages
+            .create({
+              body:
+                `Verification code from Whatever-You-Want . Please find your one time passcode :-` + otp,
+              to: user_data[0].phone_prefix + user_data[0].phone, // Text this number
+              from: config.valid_twilio_number, // From a valid Twilio number
+            })
+          mail_res = await common_functions.send_email(
+            req.body.email,
+            subject,
+            emails,
+            true
+          );
+
+          if (mail_res == true) {
+            req.response.status = true;
+            req.response.message = "One time passcode sent to your email and registered phone number";
+            next();
+          } else {
+            req.response.status = false;
+            req.response.message = "Mail sent failed, please try again.";
+            next();
+          }
+        });
+    } catch (errors) {
+      var error = errors.errors[0];
+      req.response.status = false;
+      req.response.message = error.msg;
+      next();
+    }
+  },
+
+  async reset_password(req, next) {
+    try {
+      validationResult(req).throw();
+      var enc_pass = Password.hash(req.body.password, "PASSWORD_DEFAULT");
+      try {
+        await functions
+          .update(
+            "user_master",
+            { password: enc_pass },
+            { email: req.body.email }
+          )
+          .then(() => {
+            req.response.status = true;
+            req.response.message = "Password reset successfully";
+            next();
+          });
+      } catch (error) {
+        var error = "Password reset failed, please try again";
+        req.response.status = false;
+        req.response.message = error.msg;
+        next();
+      }
+    } catch (errors) {
+      var error = errors.errors[0];
+      req.response.status = false;
+      req.response.message = error.msg;
+      next();
+    }
+  },
+
+  async user_verification(req, next) {
+    try {
+      validationResult(req).throw();
+      await functions
+        .get("user_master", { user_id: req.decoded.user_id })
+        .then((result) => {
+          var user_data = result[0];
+          try {
+            if (req.body.otp == user_data.otp) {
+              functions
+                .update(
+                  "user_master",
+                  { verification_status: "Y" },
+                  { user_id: req.decoded.user_id }
+                )
+                .then(() => {
+                  req.response.status = true;
+                  req.response.message = "User verified";
+                  req.response.user_details = {
+                    first_name: user_data.first_name,
+                    last_name: user_data.last_name,
+                    phone: user_data.phone,
+                    verification_status: "Y",
+                    email: user_data.email,
+                  };
+                  next();
+                });
+            } else {
+              req.response.status = false;
+              req.response.message = "Invalid passcode";
+              next();
+            }
+          } catch (e) {
+            console.log(e);
+            req.response.status = false;
+            req.response.message = "User verification failed";
+            req.response.error = e;
+            next();
+          }
+        });
+    } catch (errors) {
+      var error = errors.errors[0];
+      req.response.status = false;
+      req.response.message = error.msg;
+      next();
+    }
+  },
+
+  async change_password(req, next) {
+    try {
+      validationResult(req).throw();
+      var user_id = req.decoded.user_id;
+      await functions
+        .get("user_master", { user_id: user_id })
+        .then((result) => {
+          if (result.length > 0) {
+            var old_password = result[0].password;
+            if (Password.verify(req.body.old_password, old_password)) {
+              try {
+                var enc_pass = Password.hash(
+                  req.body.new_password,
+                  "PASSWORD_DEFAULT"
+                );
+                functions
+                  .update(
+                    "user_master",
+                    { password: enc_pass },
+                    { user_id: req.decoded.user_id }
+                  )
+                  .then(() => {
+                    req.response.status = true;
+                    req.response.message = "Password updated";
+                    next();
+                  });
+              } catch (e) {
+                req.response.status = false;
+                req.response.message = "Password updation error";
+                next();
+              }
+            } else {
+              req.response.status = false;
+              req.response.message = "The old password entered is incorrect";
+              next();
+            }
+          }
+        });
+    } catch (errors) {
+      console.log(errors);
+      var error = errors.errors[0];
+      req.response.status = false;
+      req.response.message = error.msg;
+      next();
+    }
+  },
+  async deactivate_account(req, next) {
+    let user_id = req.decoded.user_id;
+    try {
+      let can_apply = true;
+      let laundry_status_data = await userModel.check_user_application_status(
+        user_id,
+        "laundry"
+      );
+      let money_status_data = await userModel.check_user_application_status(
+        user_id,
+        "money"
+      );
+
+      let money_request_list = await adminModel.check_agent_block_delete_status(
+        "money",
+        user_id
+      );
+      let laundry_request_list = await agentModel.get_laundry_request_list(
+        user_id
+      );
+
+      for (let i = 0; i < laundry_request_list.length; i++) {
+        if (laundry_request_list[i].agent_request_type == "pickup") {
+          if (laundry_request_list[i].pickup_agent_id) {
+            if (laundry_request_list[i].pickup_agent_id != null) {
+              if (
+                laundry_request_list[i].pickup_agent_id != req.decoded.user_id
+              ) {
+                delete laundry_request_list[i];
+                continue;
+              }
+            }
+          }
+        } else if (laundry_request_list[i].agent_request_type == "delivery") {
+          if (laundry_request_list[i].drop_agent_id) {
+            if (laundry_request_list[i].drop_agent_id != null) {
+              if (
+                laundry_request_list[i].drop_agent_id != req.decoded.user_id
+              ) {
+                delete laundry_request_list[i];
+                continue;
+              }
+            }
+          }
+        }
+
+        // condition here is to manage same agent getting the same order for both pickup and delivery
+        if (
+          req.decoded.user_id == laundry_request_list[i].pickup_agent_id &&
+          req.decoded.user_id == laundry_request_list[i].drop_agent_id
+        ) {
+          console.log(
+            laundry_request_list[i].order,
+            laundry_request_list[i].unique_laundry_request_id
+          );
+          if (
+            laundry_request_list[i].agent_request_type == "pickup" &&
+            laundry_request_list[i].order > 9
+          ) {
+            // a test for deleting same order for delivery agent.
+            // a delivery agent will never see the first entry incase he was the pickup agent as well.
+            delete laundry_request_list[i];
+            continue;
+          }
+        } else {
+          if (req.decoded.user_id == laundry_request_list[i].pickup_agent_id) {
+            if (laundry_request_list[i].agent_request_type == "pickup") {
+              if (laundry_request_list[i].order > 9) {
+                delete laundry_request_list[i];
+                continue;
+              }
+            }
+          }
+          if (req.decoded.user_id == laundry_request_list[i].drop_agent_id) {
+            if (laundry_request_list[i].agent_request_type == "delivery") {
+              if (laundry_request_list[i].order < 9) {
+                delete laundry_request_list[i];
+                continue;
+              }
+            }
+          }
+        }
+
+        laundry_request_list[i].request_type =
+          common_functions.detect_type_of_request(
+            laundry_request_list[i].status
+          );
+        let laundromat_data = await laundromatModel.get_profile_data(
+          laundry_request_list[i].laundromat_id
+        );
+        laundromat_data = laundromat_data[0];
+
+        delete laundromat_data.stripe_id;
+        delete laundromat_data.id;
+        delete laundromat_data.license_number;
+        delete laundry_request_list[i].laundromat_id;
+        delete laundry_request_list[i].pickup_agent_id;
+        delete laundry_request_list[i].drop_agent_id;
+
+        laundry_request_list[i].laundromat_data = laundromat_data;
+      }
+      laundry_request_list = laundry_request_list.filter(
+        (item) => item != null
+      );
+
+      if (laundry_status_data.length > 0) {
+        can_apply = false;
+      }
+      if (money_status_data.length > 0) {
+        can_apply = false;
+      }
+
+      if (money_request_list.length > 0) {
+        can_apply = false;
+      }
+
+      if (laundry_request_list.length > 0) {
+        can_apply = false;
+      }
+
+      if (can_apply == false) {
+        throw {
+          errors: [
+            {
+              msg: "You have an incomplete request, please either cancel it or complete it",
+            },
+          ],
+        };
+      }
+      await common_functions.insert_delete_log(
+        "user",
+        user_id,
+        moment().format("YYYY-MM-DD HH:mm:ss")
+      );
+
+      await functions
+        .update("user_master", { is_deleted: "Y" }, { user_id: user_id })
+        .then(() => {
+          req.response.status = true;
+          req.response.message = "Account deactivation successful";
+          next();
+        });
+    } catch (error) {
+      console.log(error);
+      req.response.status = false;
+      req.response.message = "Account deactivation unsuccessful";
+      if (error.errors) {
+        req.response.message = error.errors[0].msg;
+      }
+      req.response.detailed_error = error;
+      next();
+    }
+  },
+
+  async test_push(req, next) {
+    let push_notification_data = {
+      requester_id: "",
+      device_token: [req.body.device_token],
+      request_id: "TestID",
+      title: `Test push notification `,
+      custom_data: {
+        type: "test_push",
+        request_id: "TestID",
+      },
+      body: "Test Data",
+    };
+
+    req.response.status = true;
+    req.response.message = "Push test";
+    req.response.push_notification_data = push_notification_data;
+
+    next();
+  },
+
+  async logout(req, next) {
+    try {
+
+      req.response.status = true;
+      req.response.message = "Logout Successfull";
+      next();
+    } catch (error) {
+      console.log(error);
+      req.response.message = "Server error";
+      req.response.error = error;
+      if (error.errors) {
+        req.response.message = error.errors[0].msg;
+      }
+      next();
+    }
+  },
+
+
+};
+
+module.exports = handler;
