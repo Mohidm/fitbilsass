@@ -89,29 +89,47 @@ let handler = {
         req.response = {
           otp_type: "registration",
           status: true,
+          message: "Registration successful",
           prev_middleware: "user_registration",
-          reg_insert_result: {
-            reg_db: true,
+          user: {
             otp: otp,
-            insertId: result.insertId,
-            message: "Registration successful",
+            user_id: result.insertId,
           },
         };
 
         // Set the access and refresh tokens in the headers
-        res.setHeader(
-          "x-access-token",
-          jwt.sign({ email: req.body.email, user_id: result.insertId }, config.jwt_secret, {
+        // res.setHeader(
+        //   "x-access-token",
+        //   jwt.sign({ email: req.body.email, user_id: result.insertId }, config.jwt_secret, {
+        //     expiresIn: "24h",
+        //   })
+        // );
+        // res.setHeader(
+        //   "refresh-token",
+        //   jwt.sign({ email: req.body.email, user_id: result.insertId }, config.jwt_secret, {
+        //     expiresIn: "240000h",
+        //   })
+        // );
+        const newtoken = jwt.sign(
+          { email: req.body.email, user_id: result.insertId },
+          config.jwt_secret,
+          {
             expiresIn: "24h",
-          })
+          }
         );
-        res.setHeader(
-          "refresh-token",
-          jwt.sign({ email: req.body.email, user_id: result.insertId }, config.jwt_secret, {
-            expiresIn: "240000h",
-          })
+        const newrefreshtoken = jwt.sign(
+          { email: req.body.email, user_id: result.insertId },
+          config.jwt_secret,
+          {
+            expiresIn: "24000000h",
+          }
         );
-
+        const tokenExpiry = new Date(new Date().getTime() + 24 * 60 * 60 * 1000); // 24 hours in milliseconds
+        req.response.access_token = {
+          'x-access-token': newtoken,
+          'refresh-token': newrefreshtoken,
+          'token_expiry': tokenExpiry.toISOString(),
+        }
         // Proceed to the next middleware
         next();
       });
@@ -233,9 +251,9 @@ let handler = {
 
             if (user_data.verification_status == "N") {
               // check if user verified
-              var otp = Math.floor(1000 + Math.random() * 9000); // step 2 otp generation
+              const otp = Math.floor(1000 + Math.random() * 9000); // step 2 otp generation
               functions
-                .update("user_master", { otp: otp }, { email: req.body.email })
+                .update("users", { otp: otp }, { email: req.body.email })
                 .then(() => {
                   req.response.status = false;
                   req.response.message = "Please verify your account";
@@ -283,26 +301,28 @@ let handler = {
               phone: user_data.phone,
               verification_status: user_data.verification_status,
               email: user_data.email,
-              token_expiry: "24h",
-              profile_image: user_data.profile_image,
+              profile_image: user_data.profile_image
             };
-            var newtoken = jwt.sign(
+            const newtoken = jwt.sign(
               { email: result[0].email, user_id: user_data.user_id },
               config.jwt_secret,
               {
                 expiresIn: "24h",
               }
             );
-            var newrefreshtoken = jwt.sign(
+            const newrefreshtoken = jwt.sign(
               { email: result[0].email, user_id: user_data.user_id },
               config.jwt_secret,
               {
                 expiresIn: "24000000h",
               }
             );
-
-            res.setHeader("x-access-token", newtoken);
-            res.setHeader("refresh-token", newrefreshtoken);
+            const tokenExpiry = new Date(new Date().getTime() + 24 * 60 * 60 * 1000); // 24 hours in milliseconds
+            req.response.access_token = {
+              'x-access-token': newtoken,
+              'refresh-token': newrefreshtoken,
+              'token_expiry': tokenExpiry.toISOString(),
+            }
             next();
           } else {
             req.response.status = false;

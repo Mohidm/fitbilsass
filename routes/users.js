@@ -20,7 +20,16 @@ router.post('/register',
 
   function (req, res, _next) {
     if (req.response && req.response.status === true) {
-      res.status(200).json(req.response);
+      const respone = {
+        succes: true,
+        data: {
+          message: req.response.message,
+          user: req.response.user,
+          access: req.response.access_token
+        }
+
+      }
+      res.status(200).json(respone);
     } else {
       console.log('main-err-res---', res)
       res.status(500).json(req.response);
@@ -36,7 +45,16 @@ router.post('/login',
 
   function (req, res, _next) {
     if (req.response.status == true) {
-      res.status(200).json(req.response);
+      const respone = {
+        succes: true,
+        data: {
+          message: req.response.message,
+          user: req.response.user_details,
+          access: req.response.access_token
+        }
+
+      }
+      res.status(200).json(respone);
     } else {
       res.status(400).json(req.response);
     }
