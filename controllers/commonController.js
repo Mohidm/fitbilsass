@@ -26,7 +26,7 @@ let Commonhandler = {
         }
 
         switch (req.response.from) {
-            case 'user': let user_data = await functions.get('user_master', { user_id: req.decoded.user_id });
+            case 'user': let user_data = await functions.get('users', { user_id: req.decoded.user_id });
                 if (!user_data[0].stripe_id || user_data[0].stripe_id == '' || user_data[0].stripe_id == null) {
                     try {
                         const customer = await stripe.customers.create({
@@ -34,7 +34,7 @@ let Commonhandler = {
                             name: user_data[0].first_name + ' ' + user_data[0].last_name,
                             description: 'Customer created on ' + moment().format('MMMM Do YYYY, h:mm:ss a'),
                         });
-                        await functions.update('user_master', { stripe_id: customer.id }, { user_id: req.decoded.user_id })
+                        await functions.update('users', { stripe_id: customer.id }, { user_id: req.decoded.user_id })
                         next();
                     } catch (error) {
                         console.log(error)
@@ -77,7 +77,7 @@ let Commonhandler = {
                 description: 'Customer created on ' + moment().format('MMMM Do YYYY, h:mm:ss a'),
             });
             switch (req.response.prev_middleware) {
-                case 'user_registration': await functions.update('user_master', { stripe_id: customer.id }, { email: req.body.email });
+                case 'user_registration': await functions.update('users', { stripe_id: customer.id }, { email: req.body.email });
                     break;
                 case 'laundromat_registration': await functions.update('laundromat_master', { stripe_id: customer.id }, { email: req.body.email });
                     break;
@@ -126,7 +126,7 @@ let Commonhandler = {
                     })
 
                 case 'user':
-                    await functions.get('user_master', { user_id: req.decoded.user_id }).then(async result => {
+                    await functions.get('users', { user_id: req.decoded.user_id }).then(async result => {
                         let user_data = result[0];
                         const card = await stripe.customers.createSource(user_data.stripe_id, { source: req.body.token });
                         console.log(card)
@@ -158,7 +158,7 @@ let Commonhandler = {
             req.response.account_id = ''; // for the next middleware
 
             switch (req.response.account_for) {
-                case 'user': user_data = await functions.get('user_master', { user_id: req.decoded.user_id });
+                case 'user': user_data = await functions.get('users', { user_id: req.decoded.user_id });
                     user_data = user_data[0];
                     user_data.product_description = 'Agent account for WUW';
                     break;
@@ -203,7 +203,7 @@ let Commonhandler = {
 
                 if (acc_res.status == true) {
                     switch (req.response.account_for) {
-                        case 'user': await functions.update('user_master',
+                        case 'user': await functions.update('users',
                             { stripe_account_id: acc_res.response.id },
                             { user_id: req.decoded.user_id });
                             req.response.status = true;
@@ -312,7 +312,7 @@ let Commonhandler = {
 
     },
     async delete_custom_account(req, next) {
-        // let user_data  = await functions.get('user_master',{ user_id : req.decoded.user_id });
+        // let user_data  = await functions.get('users',{ user_id : req.decoded.user_id });
         //     user_data = user_data[0];
         console.log('are we here')
         let constant_values = await userModel.get_config_values([
@@ -332,7 +332,7 @@ let Commonhandler = {
                 req.body.stripe_account_id
             );
 
-            // await functions.update('user_master',{ stripe_account_id : '' },{
+            // await functions.update('users',{ stripe_account_id : '' },{
             //     user_id : req.decoded.user_id
             // })
 
@@ -365,7 +365,7 @@ let Commonhandler = {
             switch (req.response.from) {
                 case 'laundromat': user_data = await functions.get('laundromat_master', { id: req.decoded.user_id });
                     break;
-                case 'user': user_data = await functions.get('user_master', { user_id: req.decoded.user_id });
+                case 'user': user_data = await functions.get('users', { user_id: req.decoded.user_id });
                     break;
             }
             if (user_data.length > 0) {
@@ -397,7 +397,7 @@ let Commonhandler = {
             validationResult(req).throw();
 
             switch (req.response.from) {
-                case 'user': let user_data = await functions.get('user_master', { user_id: req.decoded.user_id }, 'stripe_id');
+                case 'user': let user_data = await functions.get('users', { user_id: req.decoded.user_id }, 'stripe_id');
                     if (user_data[0].stripe_id !== '' && user_data[0].stripe_id !== null) {
                         let response = await stripe_functions.delete_stripe_card(user_data[0].stripe_id, req.body.card_id)
 
@@ -2218,7 +2218,7 @@ let Commonhandler = {
 
             switch (req.response.from) {
 
-                case 'user': await functions.update('user_master', { device_token: req.body.token }, { user_id: req.decoded.user_id });
+                case 'user': await functions.update('users', { device_token: req.body.token }, { user_id: req.decoded.user_id });
                     break;
                 case 'laundromat': await functions.update('laundromat_master', { device_token: req.body.token }, { id: req.decoded.user_id });
                     break;

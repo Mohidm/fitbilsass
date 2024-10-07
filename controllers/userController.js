@@ -149,7 +149,7 @@ let handler = {
     }
   },
   async update_profile_image(req, next) {
-    let user_data = await functions.get("user_master", {
+    let user_data = await functions.get("users", {
       user_id: req.decoded.user_id,
     });
 
@@ -340,39 +340,32 @@ let handler = {
     }
   },
 
-  async forgot_password(req, next) {
+  async forgot_password(req, res, next) {
     try {
       validationResult(req).throw();
 
       let emails = await common_functions.get_email_templates([
-        "forgot_password_email",
+        "forgot_password",
       ]);
       emails = emails[0];
-      emails.email_template = emails.template;
+      emails.email_template = emails.content;
 
-      var subject = "Forgot-Password";
-      var otp = Math.floor(1000 + Math.random() * 9000);
+      const subject = "Forgot-Password";
+      const otp = Math.floor(1000 + Math.random() * 9000);
 
-      let user_data = await functions.get("user_master", {
+      let user_data = await functions.get("users", {
         email: req.body.email,
       });
 
       functions
-        .update("user_master", { otp: otp }, { email: req.body.email })
+        .update("users", { otp: otp }, { email: req.body.email })
         .then(async () => {
           emails.email_template = emails.email_template.replace(
             /##NAME##/,
             user_data[0].first_name + " " + user_data[0].last_name
           );
           emails.email_template = emails.email_template.replace(/##OTP##/, otp);
-          twilio_client.messages
-            .create({
-              body:
-                `Verification code from Whatever-You-Want . Please find your one time passcode :-` + otp,
-              to: user_data[0].phone_prefix + user_data[0].phone, // Text this number
-              from: config.valid_twilio_number, // From a valid Twilio number
-            })
-          mail_res = await common_functions.send_email(
+          const mail_res = await common_functions.send_email(
             req.body.email,
             subject,
             emails,
@@ -381,7 +374,7 @@ let handler = {
 
           if (mail_res == true) {
             req.response.status = true;
-            req.response.message = "One time passcode sent to your email and registered phone number";
+            req.response.message = "One time passcode sent to your email";
             next();
           } else {
             req.response.status = false;
@@ -390,6 +383,7 @@ let handler = {
           }
         });
     } catch (errors) {
+      console.log("🚀 ~ forgot_password ~ errors:", errors)
       var error = errors.errors[0];
       req.response.status = false;
       req.response.message = error.msg;
@@ -404,7 +398,7 @@ let handler = {
       try {
         await functions
           .update(
-            "user_master",
+            "users",
             { password: enc_pass },
             { email: req.body.email }
           )
@@ -431,14 +425,14 @@ let handler = {
     try {
       validationResult(req).throw();
       await functions
-        .get("user_master", { user_id: req.decoded.user_id })
+        .get("users", { user_id: req.decoded.user_id })
         .then((result) => {
           var user_data = result[0];
           try {
             if (req.body.otp == user_data.otp) {
               functions
                 .update(
-                  "user_master",
+                  "users",
                   { verification_status: "Y" },
                   { user_id: req.decoded.user_id }
                 )
@@ -480,7 +474,7 @@ let handler = {
       validationResult(req).throw();
       var user_id = req.decoded.user_id;
       await functions
-        .get("user_master", { user_id: user_id })
+        .get("users", { user_id: user_id })
         .then((result) => {
           if (result.length > 0) {
             var old_password = result[0].password;
@@ -492,7 +486,7 @@ let handler = {
                 );
                 functions
                   .update(
-                    "user_master",
+                    "users",
                     { password: enc_pass },
                     { user_id: req.decoded.user_id }
                   )
@@ -657,7 +651,7 @@ let handler = {
       );
 
       await functions
-        .update("user_master", { is_deleted: "Y" }, { user_id: user_id })
+        .update("users", { is_deleted: "Y" }, { user_id: user_id })
         .then(() => {
           req.response.status = true;
           req.response.message = "Account deactivation successful";

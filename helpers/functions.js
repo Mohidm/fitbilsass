@@ -9,24 +9,24 @@ let connectionProvider = require('../server/dbConnectionProvider'),
   jwt = require('jsonwebtoken')
 
 let functions = {
-  encryptStr (str) {
+  encryptStr(str) {
     var cipher = crypto.createCipher('aes-256-cbc', 'newagesmb')
     var crypted = cipher.update(str, 'utf8', 'hex')
     crypted += cipher.final('hex')
     return crypted
   },
-  drecryptStr (enc_data) {
-    if(enc_data.length > 22){
+  drecryptStr(enc_data) {
+    if (enc_data.length > 22) {
       var decipher = crypto.createDecipher('aes-256-cbc', 'newagesmb')
-    var dec = decipher.update(enc_data, 'hex', 'utf8')
-    dec += decipher.final('utf8')
-    return dec
-    }else{
+      var dec = decipher.update(enc_data, 'hex', 'utf8')
+      dec += decipher.final('utf8')
+      return dec
+    } else {
       return enc_data;
     }
-    
+
   },
-  get (table, cond, field = '*', sort = '') {
+  get(table, cond, field = '*', sort = '') {
     var self = this
     var sql = 'SELECT ' + field + ' FROM ' + table
     if (typeof cond == 'object') {
@@ -40,20 +40,20 @@ let functions = {
     if (sort != '') {
       sql += ' ORDER BY ' + sort
     }
-    console.log('get-qry',sql)
+    console.log('get-qry', sql)
     return self.selectQuery(sql)
   },
-  insert (table, data) {
+  insert(table, data) {
     var self = this
     var sql = 'INSERT INTO ' + table + ' SET ?'
     if (typeof data == 'object') {
-      console.log('insertqry',sql)
+      console.log('insertqry', sql)
       return self.processQuery(sql, data)
     } else {
       return false
     }
   },
-  insertMultiple (table, fields, data) {
+  insertMultiple(table, fields, data) {
     var self = this
     var sql = 'INSERT INTO ' + table + ' (' + fields + ') VALUES  ?'
     //if (typeof (data) == "object") {
@@ -62,7 +62,7 @@ let functions = {
     // 	return false;
     // }
   },
-  update (table, fields, cond) {
+  update(table, fields, cond) {
     console.log(table, fields, cond)
     var self = this
     var sql = 'UPDATE ' + table + ' SET '
@@ -84,7 +84,7 @@ let functions = {
     console.log(sql)
     return self.processQuery(sql, data)
   },
-  delete (table, cond) {
+  delete(table, cond) {
     console.log(cond)
     var self = this
     var sql = 'DELETE FROM ' + table + ' WHERE 1'
@@ -98,7 +98,7 @@ let functions = {
       return false
     }
   },
-  selectQuery (sql) {
+  selectQuery(sql) {
     return new Promise((resolve, reject) => {
       let connection = connectionProvider.dbConnectionProvider.getMysqlConnection()
       connection.query(sql, (err, result) => {
@@ -108,7 +108,7 @@ let functions = {
       connectionProvider.dbConnectionProvider.closeMysqlConnection(connection)
     })
   },
-  processQuery (sql, data) {
+  processQuery(sql, data) {
     return new Promise((resolve, reject) => {
       let connection = connectionProvider.dbConnectionProvider.getMysqlConnection()
       connection.query(sql, data, (err, result) => {
@@ -118,7 +118,7 @@ let functions = {
       connectionProvider.dbConnectionProvider.closeMysqlConnection(connection)
     })
   },
-  getCount (table, cond) {
+  getCount(table, cond) {
     var self = this
     var sql = 'SELECT count(*) as count FROM ' + table
     if (typeof cond == 'object') {
@@ -130,7 +130,7 @@ let functions = {
     }
     return self.selectQuery(sql)
   },
-  encryptPass (password, callb) {
+  encryptPass(password, callb) {
     var cipher = crypto.createCipher(
       config.encrypt_algorithm,
       config.encrypt_pass
@@ -139,7 +139,7 @@ let functions = {
     crypted += cipher.final('hex')
     callb(crypted)
   },
-  decryptPass (user_password, callb) {
+  decryptPass(user_password, callb) {
     var user_password = '123456'
     var hash = Password.hash(user_password, 'PASSWORD_DEFAULT', { cost: 10 })
 
@@ -161,99 +161,95 @@ let functions = {
 
   sendMail: function (to, subject, email, isEmailTemplate, callback) {
     try {
-      config.getConfig(function (prefs) {
-        
-        var poolConfig = {
-          pool: true,
-          host: prefs.smtpHost[0],
-          port: prefs.smtpPort[0],
-          secure: true, // use SSL
 
-          auth: {
-            user: prefs.smtpUser[0],
-            pass: prefs.smtpPass[0]
+      const poolConfig = {
+        pool: true,
+        host: config.smtp_host,
+        port: config.smtp_port,
+        secure: true, // use SSL
+        auth: {
+          user: config.smtp_user,
+          pass: config.smtp_password
+        }
+      }
+
+      const transporter = nodemailer.createTransport(poolConfig)
+
+      transporter.verify(function (error, success) {
+        if (error) {
+          console.log(error)
+          callback(error)
+        } else {
+          if (!isEmailTemplate) {
+            var mailOptions = {
+              from:
+                '"' + Fitbilsass + '" <' + config.smtp_user + '>',
+              to: to,
+              subject: subject,
+              html: email
+            }
+
+            transporter.sendMail(mailOptions, function (err, info) {
+              if (err) {
+                throw err
+              } else {
+                var response = {
+                  status: 'success',
+                  message: 'Message sent successfully.'
+                }
+                callback(response)
+              }
+            })
+          } else {
+            const template = email.email_template
+            //var template = config.email_header + email.email_template + config.email_footer;
+
+            const mailOptions = {
+              from:
+                '"' + 'Fitbilsass' + '" <' + config.smtp_user + '>',
+              to: to,
+              subject: subject,
+              html: template
+            }
+
+            if (email.cc == 'Y') {
+              mailOptions.cc = ''
+            }
+
+            if (email.bcc == 'Y') {
+              mailOptions.bcc = prefs.adminEmail[0]
+            }
+
+            if (email.admin_only == 'Y') {
+              mailOptions.to = prefs.adminEmail[0]
+            }
+            if ((email.attachments == 'Y')) {
+              mailOptions.attachments = [
+                {
+                  // utf-8 string as an attachment
+                  filename: email.filename_attachments,
+                  path: email.path_attachments
+                }
+              ]
+            }
+            transporter.sendMail(mailOptions, function (err, info) {
+
+              if (err) {
+                console.log(err)
+                throw err
+              } else {
+                var response = {
+                  status: 'success',
+                  message: 'Message sent successfully.'
+                }
+
+                callback(response)
+              }
+            })
           }
         }
-
-        var transporter = nodemailer.createTransport(poolConfig)
-
-        transporter.verify(function (error, success) {
-          if (error) {
-            console.log(error)
-            callback(error)
-          } else {
-            if (!isEmailTemplate) {
-              var mailOptions = {
-                from:
-                  '"' + prefs.fromName[0] + '" <' + prefs.fromEmail[0] + '>',
-                to: to,
-                subject: subject,
-                html: email
-              }
-
-              transporter.sendMail(mailOptions, function (err, info) {
-                if (err) {
-                  throw err
-                } else {
-                  var response = {
-                    status: 'success',
-                    message: 'Message sent successfully.'
-                  }
-                  callback(response)
-                }
-              })
-            } else {
-              var template = email.email_template
-              //var template = config.email_header + email.email_template + config.email_footer;
-
-              var mailOptions = {
-                from:
-                  '"' + prefs.fromName[0] + '" <' + prefs.fromEmail[0] + '>',
-                to: to,
-                subject: subject,
-                html: template
-              }
-
-              if (email.cc == 'Y') {
-                mailOptions.cc = 'jinson@newagesmb.com'
-              }
-
-              if (email.bcc == 'Y') {
-                mailOptions.bcc = prefs.adminEmail[0]
-              }
-
-              if (email.admin_only == 'Y') {
-                mailOptions.to = prefs.adminEmail[0]
-              }
-              if ((email.attachments == 'Y')) {
-                mailOptions.attachments = [
-                  {
-                    // utf-8 string as an attachment
-                    filename: email.filename_attachments,
-                    path: email.path_attachments
-                  }
-                ]
-              }
-              console.log('mailer-data',mailOptions)
-              transporter.sendMail(mailOptions, function (err, info) {
-                
-                if (err) {
-                  console.log(err)
-                  throw err
-                } else {
-                  console.log(info)
-                  var response = {
-                    status: 'success',
-                    message: 'Message sent successfully.'
-                  }
-
-                  callback(response)
-                }
-              })
-            }
-          }
-        })
       })
+
     } catch (e) {
       callback(e)
     }
@@ -354,7 +350,7 @@ let functions = {
     }
   },
 
-  middleware (req, res, next) {
+  middleware(req, res, next) {
     let token = req.headers['authtoken'] || ''
 
     let method = req.method

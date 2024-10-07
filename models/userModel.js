@@ -15,7 +15,7 @@ let userModel = {
                         u2.type,
                         u.profile_image 
                    FROM 
-                        user_master u 
+                        users u 
                         LEFT JOIN user_type u2 on u.user_type = u2.id 
                    WHERE u.user_id = ${user_id}`;
     console.log(sql);
@@ -37,7 +37,7 @@ let userModel = {
                         AIF.in_hand_money as moneyInHand 
                     FROM
                         agent_details A
-                        LEFT JOIN user_master U ON A.agent_id = U.user_id
+                        LEFT JOIN users U ON A.agent_id = U.user_id
                         LEFT JOIN user_type U2 ON U.user_type = U2.id 
                         LEFT JOIN agents_inhand_finances AIF ON AIF.agent_id = U.user_id
                     WHERE A.agent_id = ${agent_id}`;
@@ -97,7 +97,7 @@ let userModel = {
     } else {
       outerSql = sql;
     }
-    
+
 
     return functions.selectQuery(outerSql);
   },
@@ -329,8 +329,8 @@ let userModel = {
                     money_request MR 
                     LEFT JOIN money_request_status MRS ON MRS.money_request_id = MR.id
                     LEFT JOIN money_delivery_address MDA ON MDA.money_request_id = MR.id
-                    LEFT JOIN user_master UM ON UM.user_id = MR.requester_id 
-                    LEFT JOIN user_master AD ON AD.user_id = MR.accepted_agent_id
+                    LEFT JOIN users UM ON UM.user_id = MR.requester_id 
+                    LEFT JOIN users AD ON AD.user_id = MR.accepted_agent_id
                 WHERE
                     MR.requester_id = ${user_id} AND (MRS.status = 'cancelled' OR MRS.status = 'delivered') `;
 
@@ -391,7 +391,7 @@ let userModel = {
                     laundry_request LR 
                     LEFT JOIN laundry_request_status LRS ON LRS.laundry_request_id = LR.id
                     LEFT JOIN laundry_delivery_address LDA ON LDA.laundry_request_id = LR.id
-                    LEFT JOIN user_master UM ON UM.user_id = LR.requester_id
+                    LEFT JOIN users UM ON UM.user_id = LR.requester_id
                     LEFT JOIN laundromat_order_status_values LOSV ON LOSV.status = LRS.status
                 WHERE
                     LR.requester_id = ${user_id} AND (LOSV.order >= 19 OR LOSV.order = 3) `;
@@ -429,7 +429,7 @@ let userModel = {
                         money_request MR
                         LEFT JOIN outgoing_money_request_log OMR ON OMR.request_id = MR.id
                         LEFT JOIN agent_details AD ON AD.unique_agent_id = OMR.agent_unique_id
-                        LEFT JOIN user_master UM ON UM.user_id = AD.agent_id 
+                        LEFT JOIN users UM ON UM.user_id = AD.agent_id 
                     WHERE
                         MR.unique_id = '${unique_id}'`;
     return functions.selectQuery(sql);
@@ -552,7 +552,7 @@ let userModel = {
                                 UM.profile_image,
                                 UM.device_token
                             FROM
-                                user_master UM
+                                users UM
                             WHERE
                                 user_id = ${request_data.requester_id}`;
         let result_4 = await functions.selectQuery(sql_4);
@@ -587,7 +587,7 @@ let userModel = {
                                 AD.vehicle_type 
                             FROM
                                 agent_details AD
-                                LEFT JOIN user_master UM ON UM.user_id = AD.agent_id 
+                                LEFT JOIN users UM ON UM.user_id = AD.agent_id 
                             WHERE
                                 AD.agent_id = ${request_data.agent_id}`;
 
@@ -643,7 +643,7 @@ let userModel = {
     start = "",
     end = ""
   ) {
-    let sql =    `SELECT
+    let sql = `SELECT
                     RR.unique_id AS unique_ride_request_id,
                     RR.original_payable_price,
                     RR.final_payable_price,
@@ -670,10 +670,10 @@ let userModel = {
                 FROM   
                     ride_requests RR 
                     LEFT JOIN ride_request_address_details RDA ON RDA.request_id = RR.id
-                    LEFT JOIN user_master UM ON UM.user_id = RR.requester_id 
-                    LEFT JOIN user_master AD ON AD.user_id = RR.agent_id
+                    LEFT JOIN users UM ON UM.user_id = RR.requester_id 
+                    LEFT JOIN users AD ON AD.user_id = RR.agent_id
                 WHERE
-                    RR.requester_id = ${user_id} AND RR.status = 'payment_completed'` ;
+                    RR.requester_id = ${user_id} AND RR.status = 'payment_completed'`;
 
     if (start != "" && end != "") {
       sql += ` AND (CAST(RR.created_date AS DATE) BETWEEN  '${start}'  AND  '${end}' ) `;

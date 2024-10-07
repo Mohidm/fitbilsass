@@ -8,7 +8,7 @@ const validationHandler = {
             check('email', 'Email missing').notEmpty(),
             check('email', 'Invalid email format').isEmail(),
             // check('email', 'Email already exist').custom(async (value, req) => {
-            //     await functions.get('user_master', { email: value }).then(result => {
+            //     await functions.get('users', { email: value }).then(result => {
             //         if (result.length > 0) {
             //             return Promise.reject();
             //         } else {
@@ -54,7 +54,7 @@ const validationHandler = {
             check('email', 'Enter your registered email address').notEmpty(),
             check('email', 'Invalid email format').isEmail(),
             check('email', 'Email does not exist').custom(async (value, req) => {
-                await functions.get('user_master', { email: value }).then(result => {
+                await functions.get('users', { email: value }).then(result => {
                     if (result.length == 0) {
                         return Promise.reject();
                     } else {
@@ -71,7 +71,7 @@ const validationHandler = {
             check('email', 'Invalid email format').isEmail(),
             check('otp', 'Please provide one time passcode').notEmpty(),
             check('email', 'Email does not exist').custom(async (value, req) => {
-                await functions.get('user_master', { email: value }).then(result => {
+                await functions.get('users', { email: value }).then(result => {
                     if (result.length == 0) {
                         return Promise.reject();
                     } else {

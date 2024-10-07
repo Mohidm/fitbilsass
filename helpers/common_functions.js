@@ -171,7 +171,7 @@ let common_handler = {
                     case 'agent':
                     case 'user':
 
-                        data = await functions.get('user_master', {
+                        data = await functions.get('users', {
                             user_id: user_id
                         })
                         resolve({
@@ -225,13 +225,13 @@ let common_handler = {
         });
     },
     get_email_templates(keys) {
-        let sql = `SELECT * FROM email_master WHERE `;
+        let sql = `SELECT * FROM email_templates WHERE `;
         for (let i = 0; i < keys.length; i++) {
 
             if (i != keys.length - 1) {
-                sql += ` email_key = '` + keys[i] + `' OR `;
+                sql += ` name = '` + keys[i] + `' OR `;
             } else {
-                sql += ` email_key = '` + keys[i] + `'`
+                sql += ` name = '` + keys[i] + `'`
             }
         }
 
@@ -241,8 +241,11 @@ let common_handler = {
         try {
             return new Promise((resolve, reject) => {
                 functions.sendMail(email, subject, email_data, is_email, function (result) {
-                    console.log(result)
-                    resolve(true);
+                    if (result?.status === 'success') {
+                        resolve(true);
+                    } else {
+                        reject(false)
+                    }
                 })
             })
         } catch (error) {
