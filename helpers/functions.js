@@ -63,7 +63,6 @@ let functions = {
     // }
   },
   update(table, fields, cond) {
-    console.log(table, fields, cond)
     var self = this
     var sql = 'UPDATE ' + table + ' SET '
     for (var key in fields) {

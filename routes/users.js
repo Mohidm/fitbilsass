@@ -42,7 +42,7 @@ router.post('/register',
 router.post('/login',
   validator.login_validator(),
   userController.login,
-
+  commonController.send_otp_mail,
   function (req, res, _next) {
     if (req.response.status == true) {
       const respone = {
@@ -71,11 +71,29 @@ router.post('/forgot_password',
     }
   });
 
+router.post('/verify_forgot_otp',
+  validator.otp_forgot_validator(),
+  userController.verify_forgot_otp,
+  function (req, res, next) {
+    if (req.response.status == true) {
+      const resp = {
+        succes: true,
+        data: {
+          message: req.response.message,
 
+          reset_token: req.response.reset_token
+        }
+
+      }
+      res.status(200).json(resp);
+    } else {
+      res.status(400).json(req.response);
+    }
+  });
 
 
 router.post('/reset_password',
-  validator.login_validator(),
+  validator.reset_forgot_password(),
   userController.reset_password,
   function (req, res, _next) {
     if (req.response.status == true) {
@@ -150,13 +168,23 @@ router.use(function (req, res, next) {
 });
 
 
-router.use(
-  function (req, _res, next) { req.response.from = 'user'; next(); },
-  commonController.save_api_log,
-  function (_req, _res, next) {
-    next();
-  })
-
+// router.use(
+//   function (req, _res, next) { req.response.from = 'user'; next(); },
+//   commonController.save_api_log,
+//   function (_req, _res, next) {
+//     next();
+//   })
+router.post('/verify_otp', // to verify the user account
+  validator.verify_user_validator(),
+  userController.user_verification,
+  function (req, res, next) {
+    if (req.response.status == true) {
+      res.status(200).json(req.response);
+    } else {
+      res.status(401).json(req.response);
+    }
+  }
+);
 
 // router.post('/change_password',
 //   validator.change_password_check(),

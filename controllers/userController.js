@@ -26,6 +26,7 @@ const common_functions = require('../helpers/common_functions');
 
 const { request } = require('express');
 const { ride_request_payment } = require('../helpers/validator');
+const { v4: uuidv4 } = require("uuid");
 
 let handler = {
   async registration(req, res, next) {
@@ -134,7 +135,7 @@ let handler = {
         next();
       });
     } catch (error) {
-      console.log("🚀 ~ registration ~ error:", error)
+
       // Handle validation or registration errors
       const errMsg = error.errors && error.errors[0] ? error.errors[0].msg : "Something went wrong";
       req.response = req.response || {};
@@ -249,42 +250,41 @@ let handler = {
               };
             }
 
-            if (user_data.verification_status == "N") {
+            if (user_data.account_verified == "N") {
               // check if user verified
               const otp = Math.floor(1000 + Math.random() * 9000); // step 2 otp generation
               functions
                 .update("users", { otp: otp }, { email: req.body.email })
                 .then(() => {
-                  req.response.status = false;
+                  req.response.status = true;
                   req.response.message = "Please verify your account";
-                  req.response.otp = otp;
-                  req.response.otp_type = "verification_fail";
-                  req.response.first_name = user_data.first_name;
-                  req.response.last_name = user_data.last_name;
-                  req.response.phone_prefix = user_data.phone_prefix;
-                  req.response.phone = user_data.phone;
-                  req.response.verification_status =
-                    user_data.verification_status;
-                  req.response.email = user_data.email;
-                  req.response.profile_image = user_data.profile_image;
+                  req.response.user = {
+                    otp,
+                    user_id: user_data.id,
+                    email: user_data.email,
+                    verification_pending: true
+                  }
 
-                  var newtoken = jwt.sign(
+                  const newtoken = jwt.sign(
                     { email: user_data.email, user_id: user_data.user_id },
                     config.jwt_secret,
                     {
                       expiresIn: "24h",
                     }
                   );
-                  var newrefreshtoken = jwt.sign(
+                  const newrefreshtoken = jwt.sign(
                     { email: user_data.email, user_id: user_data.user_id },
                     config.jwt_secret,
                     {
                       expiresIn: "24000000h",
                     }
                   );
-
-                  res.setHeader("x-access-token", newtoken);
-                  res.setHeader("refresh-token", newrefreshtoken);
+                  const tokenExpiry = new Date(new Date().getTime() + 24 * 60 * 60 * 1000); // 24 hours in milliseconds
+                  req.response.access_token = {
+                    'x-access-token': newtoken,
+                    'refresh-token': newrefreshtoken,
+                    'token_expiry': tokenExpiry.toISOString(),
+                  }
 
                   next();
                 });
@@ -345,7 +345,7 @@ let handler = {
       validationResult(req).throw();
 
       let emails = await common_functions.get_email_templates([
-        "forgot_password",
+        "email_verification",
       ]);
       emails = emails[0];
       emails.email_template = emails.content;
@@ -390,16 +390,50 @@ let handler = {
       next();
     }
   },
-
-  async reset_password(req, next) {
+  async verify_forgot_otp(req, res, next) {
     try {
       validationResult(req).throw();
-      var enc_pass = Password.hash(req.body.password, "PASSWORD_DEFAULT");
+      await functions
+        .get("users", { email: req.body.email })
+        .then(async (result) => {
+          const user_data = result[0];
+          if (user_data.otp == req.body.otp) {
+            const uuid = uuidv4();
+            await functions
+              .update(
+                "users",
+                { password_reset_token: uuid },
+                { email: req.body.email }
+              )
+              .then(() => {
+                req.response.status = true;
+                req.response.message = "Forgot otp verification successfull";
+                req.response.reset_token = uuid
+                next();
+              });
+
+          } else {
+            req.response.status = false;
+            req.response.message = "User verification failed";
+            next();
+          }
+        });
+    } catch (errors) {
+      var error = errors.errors[0];
+      req.response.status = false;
+      req.response.message = error.msg;
+      next();
+    }
+  },
+  async reset_password(req, res, next) {
+    try {
+      validationResult(req).throw();
+      const enc_pass = Password.hash(req.body.password, "PASSWORD_DEFAULT");
       try {
         await functions
           .update(
             "users",
-            { password: enc_pass },
+            { password: enc_pass, password_reset_token: null },
             { email: req.body.email }
           )
           .then(() => {
@@ -408,24 +442,23 @@ let handler = {
             next();
           });
       } catch (error) {
-        var error = "Password reset failed, please try again";
         req.response.status = false;
-        req.response.message = error.msg;
+        req.response.message = "Password reset failed!";
         next();
       }
     } catch (errors) {
-      var error = errors.errors[0];
+      const error = errors?.errors[0];
       req.response.status = false;
       req.response.message = error.msg;
       next();
     }
   },
 
-  async user_verification(req, next) {
+  async user_verification(req, res, next) {
     try {
       validationResult(req).throw();
       await functions
-        .get("users", { user_id: req.decoded.user_id })
+        .get("users", { id: req.decoded.user_id })
         .then((result) => {
           var user_data = result[0];
           try {
@@ -433,8 +466,8 @@ let handler = {
               functions
                 .update(
                   "users",
-                  { verification_status: "Y" },
-                  { user_id: req.decoded.user_id }
+                  { account_verified: "Y" },
+                  { id: req.decoded.user_id }
                 )
                 .then(() => {
                   req.response.status = true;
@@ -443,7 +476,7 @@ let handler = {
                     first_name: user_data.first_name,
                     last_name: user_data.last_name,
                     phone: user_data.phone,
-                    verification_status: "Y",
+                    account_verified: "Y",
                     email: user_data.email,
                   };
                   next();
@@ -462,7 +495,8 @@ let handler = {
           }
         });
     } catch (errors) {
-      var error = errors.errors[0];
+      console.log("🚀 ~ user_verification ~ errors:", errors)
+      var error = errors?.errors[0];
       req.response.status = false;
       req.response.message = error.msg;
       next();

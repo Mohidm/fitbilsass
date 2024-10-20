@@ -828,30 +828,48 @@ let Commonhandler = {
 
                 return next(); // Return to ensure no further execution
             }
+            if (req?.response?.user?.otp) {
+                let emails = await common_functions.get_email_templates([
+                    "email_verification",
+                ]);
+                emails = emails[0];
+
+                emails.email_template = emails.content;
+                const subject = "Account Verification";
+                const otp = req.response.user.otp;
+
+                let user_data = await functions.get("users", {
+                    id: req.response.user.user_id,
+                });
+
+                emails.email_template = emails.email_template.replace(
+                    /##NAME##/,
+                    user_data[0].first_name + " " + user_data[0].last_name
+                );
+                emails.email_template = emails.email_template.replace(/##OTP##/, otp);
+                const mail_res = await common_functions.send_email(
+                    req.body.email,
+                    subject,
+                    emails,
+                    true
+                );
+
+                if (mail_res == true) {
+                    req.response.status = true;
+                    req.response.message = req.response.user?.verification_pending ? "Account verification pending, one time passcode sent to your email" : "One time passcode sent to your email";
+                    req.response.user_details = req.response.user;
+                    next();
+                } else {
+                    req.response.status = false;
+                    req.response.message = "Mail sent failed, please try again.";
+                    next();
+                }
+            } else {
+                next()
+            }
 
 
 
-
-            // let emails = await common_functions.get_email_templates(['verification_email']);
-            // emails = emails[0];
-            // emails.email_template = emails.template;
-
-            // emails.email_template = emails.email_template.replace('##NAME##', req.response.name);
-            // emails.email_template = emails.email_template.replace('##OTP##', req.response.otp);
-
-
-            // await common_functions.send_email(req.response.email, emails.subject, emails, true);
-
-            // if (req.response.name) {
-            //     delete req.response.name;
-            // }
-            // if (req.response.email) {
-            //     delete req.response.email;
-            // }
-            // if (req.response.otp) {
-            //     delete req.response.otp;
-            // }
-            next();
         } catch (error) {
             console.error('Error in send_otp_mail:', error);
             return next(error);

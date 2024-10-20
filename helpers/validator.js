@@ -43,6 +43,37 @@ const validationHandler = {
 
         ];
     },
+    reset_forgot_password: function () {
+        return [
+            check('email', 'Enter your registered email address').notEmpty(),
+            check('email', 'Invalid email format').isEmail(),
+            check('email', 'Email does not exist').custom(async (value, req) => {
+                await functions.get('users', { email: value }).then(result => {
+
+                    if (result.length == 0) {
+                        return Promise.reject();
+                    } else {
+                        return Promise.resolve();
+                    }
+                })
+            }),
+            check('token', 'Enter your password reset token').notEmpty(),
+            check(['email', 'token'], 'Invalid reset token').custom(async (value, { req }) => {
+                const { email, token } = req.body;
+                await functions.get('users', { email, password_reset_token: token }).then(result => {
+
+                    if (result.length == 0) {
+                        return Promise.reject();
+                    } else {
+                        return Promise.resolve();
+                    }
+                })
+            }),
+            check('password', 'Enter your password').notEmpty(),
+
+
+        ];
+    },
     verify_user_validator: function () {
         return [
             check('otp', 'Please provide your one time passcode').notEmpty()
