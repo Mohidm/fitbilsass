@@ -3,7 +3,6 @@ const { check } = require('express-validator');
 const Password = require('node-php-password');
 const validationHandler = {
     registration_validator: function () {
-        console.log('reg-validatr-called---------')
         return [
             check('email', 'Email missing').notEmpty(),
             check('email', 'Invalid email format').isEmail(),
@@ -23,6 +22,61 @@ const validationHandler = {
             check('phone', 'Phone number is required').notEmpty(),
             check('address', 'Address is required').notEmpty(),
             check('gym_name', 'Gym center name is required').notEmpty()
+        ]
+    },
+    add_member_validator: function () {
+        return [
+            check('gym_admin_id')
+                .notEmpty().withMessage('Gym Admin ID is required')
+                .isInt().withMessage('Gym Admin ID must be an integer')
+                .custom(async (value) => {
+                    const rows = await functions.get('users', { id: value });
+                    if (rows?.length === 0) {
+                        throw new Error('Invalid Gym Admin ID: Gym admin does not exist');
+                    }
+
+                    // If the gym admin exists, the validation passes
+                    return true;
+                }),
+            check('full_name', 'Name missing').notEmpty(),
+            check('join_date', 'Joining date missing').notEmpty(),
+            check('phone', 'Enter phone number').notEmpty()
+
+        ]
+    },
+    add_fee_validator: function () {
+        return [
+            check('member_id')
+                .notEmpty().withMessage('Member ID is required')
+                .isInt().withMessage('Member ID must be an integer')
+                .custom(async (value) => {
+                    const rows = await functions.get('members', { id: value });
+                    if (rows?.length === 0) {
+                        throw new Error('Invalid Member ID: Member does not exist');
+                    }
+
+                    // If the Member exists, the validation passes
+                    return true;
+                }),
+            check('month')
+                .isIn(['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'])
+                .withMessage('Invalid month provided. Must be one of: JAN, FEB, MAR, APR, MAY, JUN, JUL, AUG, SEP, OCT, NOV, DEC'),
+
+            // Validate 'paid' to be either 'Y' or 'N'
+            check('paid')
+                .isIn(['Y', 'N'])
+                .withMessage('Invalid paid status provided. Must be either Y or N'),
+
+            // Other validations, e.g., for amount, year, etc.
+            check('amount')
+                .isDecimal()
+                .withMessage('Amount must be a valid decimal number'),
+
+            check('year')
+                .isInt({ min: 1901, max: 2155 })
+                .withMessage('Year must be a valid year between 1901 and 2155'),
+
+
         ]
     },
     login_validator: function () {
